@@ -1,6 +1,7 @@
 package postbox
 
 import (
+	"crypto/aes"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -8,6 +9,38 @@ import (
 
 	_ "modernc.org/sqlite"
 )
+
+func TestDecryptSQLCipherPagePreservesZeroSQLiteLockingPage(t *testing.T) {
+	const pageSize = 4096
+
+	block, err := aes.NewCipher(make([]byte, sqlcipherKeySize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pageNo := uint32(sqlitePendingByte/pageSize + 1)
+	page := make([]byte, pageSize)
+	dst := make([]byte, pageSize)
+	for i := range dst {
+		dst[i] = 0xff
+	}
+
+	if err := decryptSQLCipherPage(block, make([]byte, sqlcipherKeySize), pageNo, pageSize, page, dst); err != nil {
+		t.Fatalf("zero SQLite locking page: %v", err)
+	}
+	for i, b := range dst {
+		if b != 0 {
+			t.Fatalf("output byte %d = %d, want 0", i, b)
+		}
+	}
+
+	if err := decryptSQLCipherPage(block, make([]byte, sqlcipherKeySize), pageNo+1, pageSize, page, dst); err == nil {
+		t.Fatal("zero page outside SQLite locking page passed HMAC verification")
+	}
+	page[0] = 1
+	if err := decryptSQLCipherPage(block, make([]byte, sqlcipherKeySize), pageNo, pageSize, page, dst); err == nil {
+		t.Fatal("non-zero SQLite locking page passed HMAC verification")
+	}
+}
 
 func TestDecryptSQLCipherV4Fixture(t *testing.T) {
 	keyAndSalt := make([]byte, 48)
