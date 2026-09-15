@@ -3,6 +3,7 @@ package postbox
 import (
 	"crypto/aes"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,8 +12,15 @@ import (
 )
 
 func TestDecryptSQLCipherPagePreservesZeroSQLiteLockingPage(t *testing.T) {
-	const pageSize = 4096
+	for pageSize := 512; pageSize <= 65536; pageSize *= 2 {
+		t.Run(fmt.Sprint(pageSize), func(t *testing.T) {
+			testSQLCipherLockingPage(t, pageSize)
+		})
+	}
+}
 
+func testSQLCipherLockingPage(t *testing.T, pageSize int) {
+	t.Helper()
 	block, err := aes.NewCipher(make([]byte, sqlcipherKeySize))
 	if err != nil {
 		t.Fatal(err)
@@ -33,8 +41,10 @@ func TestDecryptSQLCipherPagePreservesZeroSQLiteLockingPage(t *testing.T) {
 		}
 	}
 
-	if err := decryptSQLCipherPage(block, make([]byte, sqlcipherKeySize), pageNo+1, pageSize, page, dst); err == nil {
-		t.Fatal("zero page outside SQLite locking page passed HMAC verification")
+	for _, adjacent := range []uint32{pageNo - 1, pageNo + 1} {
+		if err := decryptSQLCipherPage(block, make([]byte, sqlcipherKeySize), adjacent, pageSize, page, dst); err == nil {
+			t.Fatalf("zero page %d outside SQLite locking page passed HMAC verification", adjacent)
+		}
 	}
 	page[0] = 1
 	if err := decryptSQLCipherPage(block, make([]byte, sqlcipherKeySize), pageNo, pageSize, page, dst); err == nil {

@@ -118,6 +118,8 @@ func decryptSQLCipherPage(block cipher.Block, hmacKey []byte, pageNo uint32, pag
 }
 
 func isZeroSQLiteLockingPage(pageNo uint32, pageSize int, page []byte) bool {
+	// SQLite never allocates the page containing its fixed pending-lock byte.
+	// Only this entire zero page is exempt; data pages must authenticate.
 	if pageSize <= 0 || len(page) != pageSize || pageNo != uint32(sqlitePendingByte/pageSize)+1 {
 		return false
 	}
